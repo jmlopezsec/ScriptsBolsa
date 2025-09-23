@@ -1,0 +1,5 @@
+yfinance
+finplot
+pandas
+scikit-learn
+pyqt5
