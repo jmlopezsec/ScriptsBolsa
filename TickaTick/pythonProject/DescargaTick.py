@@ -229,29 +229,34 @@ def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
     rows = []
     seen_keys = set()  # para evitar duplicados por solapamientos entre pages
 
-    current_start = start_utc
+    #Antes current_start = start_utc
+    current_end= end_utc
+
     iteration = 0
     max_time = None
 
-    while current_start < end_utc:
+    while current_end >= start_utc:
         iteration += 1
         # IB acepta endDateTime como string 'YYYYMMDD HH:MM:SS' (UTC)
-        start_str = current_start.strftime("%Y%m%d %H:%M:%S")
-        end_str = end_utc.strftime("%Y%m%d %H:%M:%S")
+        #Antes start_str = current_start.strftime("%Y%m%d %H:%M:%S")
+        #Antes end_str = end_utc.strftime("%Y%m%d %H:%M:%S")
+
+        end_str = current_end.strftime("%Y%m%d %H:%M:%S")
 
         logger.debug(f"Iteración {iteration} tiempo a pedir: {end_str}")
 
         try:
             ticks = ib.reqHistoricalTicks(
                 contract,
-                startDateTime=start_str,                   # dejamos vacío para pedir max hacia atrás desde endDateTime
-                endDateTime=end_str,
+                #startDateTime=start_str,                   # dejamos vacío para pedir max hacia atrás desde endDateTime
+                startDateTime="",
+                endDateTime=current_end, # end_str,
                 numberOfTicks=1000,
                 whatToShow=WHAT_TO_SHOW,
                 useRth=True,
                 ignoreSize=False
             )
-            logger.debug(f"Recibidos {len(ticks)} ticks en iter {iteration} ({start_str} → {end_str})")
+            logger.debug(f"Recibidos {len(ticks)} ticks en iter {iteration} ({start_utc} → {end_str})")
         except Exception as e:
             print(f"    ⚠️ reqHistoricalTicks fallo en iter {iteration} hasta {end_str}: {e}")
             logger.exception(f"⚠️ reqHistoricalTicks fallo en iter {iteration} hasta {end_str}")
@@ -261,6 +266,14 @@ def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
 
         if not ticks:
             break
+
+        first_tick = ticks[0]
+        last_tick = ticks[-1]
+        logger.debug(
+            f"Primer tick: time={first_tick.time}, price={getattr(first_tick, 'price', None)}, bid={getattr(first_tick, 'priceBid', None)}, ask={getattr(first_tick, 'priceAsk', None)}")
+        logger.debug(
+            f"Último tick: time={last_tick.time}, price={getattr(last_tick, 'price', None)}, bid={getattr(last_tick, 'priceBid', None)}, ask={getattr(last_tick, 'priceAsk', None)}")
+
 
         # convertir y filtrar por >0 start-utc Usar dedupe por key compuesto para evitar duplicados entre páginas
 
@@ -276,6 +289,7 @@ def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
             logger.debug (f"tiempo tick: {ttime}")
             # filtrar fuera de sesión (anterior al inicio)
             if ttime < start_utc or ttime > end_utc:
+                logger.info("Fuera de sesión")
                 continue
 
             if "bid" in row:  # estamos en Bid_Ask
@@ -295,42 +309,39 @@ def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
             else:  # fallback genérico
                 key = tuple(row.items())
 
+
+
             if key in seen_keys:
                 continue
 
+            logger.debug(f"Key generada: {key}")
             seen_keys.add(key)
             block_rows.append(row)
             block_times.append(ttime)
-            logger.debug(f"Append block_times: {ttime}")
+            #logger.debug(f"Append block_times: {ttime}")
 
         if block_rows:
             rows.extend(block_rows)
 
-        if block_times:
-
-            last_time= max(block_times)
-            logger.debug(f"last time {last_time}")
-            current_start = last_time + timedelta(seconds=1)
-            logger.debug(f"Current Start {current_start}")
-        else:
+        if not block_rows:
             break
 
-        if current_start >= end_utc:
-            break
+        # retroceder el end actual justo antes del tick más antiguo del bloque
+        earliest = min(block_times)
+        logger.debug(f"El earliest: {earliest}")
+        current_end = earliest - timedelta(seconds=1)  # IB solo entiende segundos
 
-
-        # pausa corta para evitar pacing violations
         time.sleep(0.2)
 
-    # construir DataFrame ordenado ascendente por time
-    if not rows:
-        return pd.DataFrame(columns=["time", "bid", "bid_size", "ask", "ask_size", "midpoint"])
-        return pd.DataFrame(columns=["time"] + (["bid", "bid_size", "ask", "ask_size", "midpoint"] if WHAT_TO_SHOW.lower() == "bid_ask" else ["price", "size"]))
+    logger.debug(f"valor current_end: {current_end}")
+    # al final, ordenar todos los ticks ascendentemente por tiempo
+    if rows:
+        df = pd.DataFrame(rows)
+        df.sort_values("time", inplace=True)
+        df["time"] = pd.to_datetime(df["time"]).dt.tz_convert(pytz.utc)
+    else:
+        df = pd.DataFrame(columns=["time", "bid", "bid_size", "ask", "ask_size", "midpoint"])
 
-    df = pd.DataFrame(rows)
-    df.sort_values("time", inplace=True)
-    # asegurar time utc tz-aware
-    df["time"] = pd.to_datetime(df["time"]).dt.tz_convert(pytz.utc)
     return df
 
 # ----------------------------

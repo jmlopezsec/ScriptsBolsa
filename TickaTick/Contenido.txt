@@ -1,0 +1,24 @@
+Esta versión descarga datos tick a tick de Interactivebrokers.
+
+Características principales del script:
+
+1.- Un directorio por activo (ejemplo: ./data/AAPL/).
+2.- Un fichero XLS por cada sesión de Wall Street (ejemplo: 2025-09-25.xls).
+3.- La primera vez que se ejecuta para un activo:
+    Crea el directorio si no existe.
+    Intentará bajar el máximo histórico permitido
+    Guardará los días en ficheros separados.
+4.- Ejecuciones posteriores:
+    Si estás en sesión (NY 9:30–16:00), solo baja los días anteriores que falten.
+    Si estás fuera de sesión, baja el día en curso y los días anteriores faltantes.
+
+'''
+#!/usr/bin/env python3
+"""
+Descarga incremental tick-a-tick (Bid/Ask) desde IB por día de sesión,
+encadenando llamadas de 1000 en 1000 hasta completar la sesión,
+guardando un fichero XLSX por día en un subdirectorio por ticker.
+
+Ajusta TICKERS, OUTPUT_ROOT, INIT_DAYS_BACK según necesites.
+Esta probrado la descraga inicial, para un sólo activo.
+Se generan muchísimos datos por lo que voy a hacer un script que descargue en barras de un sg.
