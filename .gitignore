@@ -168,6 +168,19 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+
+#Añdido
+# Ignorar todos los ficheros Excel
+*.xlsx
+
+# Ignorar todos los ficheros que empiecen por "ib_ticks"
+ib_ticks*
+
+
+
+
+
+
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

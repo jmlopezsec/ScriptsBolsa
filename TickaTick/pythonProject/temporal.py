@@ -33,10 +33,19 @@ from logging.handlers import TimedRotatingFileHandler
 
 
 
+# === CONFIGURACIÓN GLOBAL ===
+BASE_DIR = "E:/DATOSBOLSA"
+EXCEL_CONFIG = os.path.join(BASE_DIR, "activos.xlsx")
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+
+
+
 # ----------------------------
 # CONFIGURACIÓN (TOP LEVEL)
 # ----------------------------
-TICKERS = ["SPY","PYPL","MO","KO","SBUX","AAPL","INTC","T"]    # Lista de símbolos
+TICKERS = ["SPY","PYPL","MO","KO","SBUX","AAPL","INTC"]    # Lista de símbolos
 OUTPUT_ROOT = "./data1s"                # Carpeta raíz donde se crearán subdirectorios
 #WHAT_TO_SHOW = "Bid_Ask"              # Usamos Bid_Ask para reqHistoricalTicks
 WHAT_TO_SHOW = "Trades"              # Usamos Bid_Ask para reqHistoricalTicks
@@ -54,25 +63,32 @@ SESSION_CLOSE = dtime(16, 0)
 # Inicialización del Logging
 
 # Configuración de logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # nivel mínimo que quieres capturar
+
+# === LOGGING CON FICHERO DIARIO ===
+today_str = datetime.now().strftime("%Y%m%d")
+log_file = os.path.join(LOG_DIR, f"downloader_{today_str}.log")
+logger = logging.getLogger("IBDownloader")
+logger.setLevel(logging.INFO)
+#logger.setLevel(logging.DEBUG)  # nivel mínimo que quieres capturar
 
 # Formato de los mensajes
 formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
 # Handler para fichero rotativo (un archivo por día, guarda 7 días)
-file_handler = TimedRotatingFileHandler(
-    "ib_ticks.log", when="midnight", backupCount=7, encoding="utf-8"
-)
-file_handler.setFormatter(formatter)
+#file_handler = TimedRotatingFileHandler(
+#    "ib_ticks.log", when="midnight", backupCount=7, encoding="utf-8"
+#)
+#file_handler.setFormatter(formatter)
 
-# Handler para consola
+# Consola
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
-
-# Añadir handlers al logger
-logger.addHandler(file_handler)
 logger.addHandler(console_handler)
+
+# Fichero diario
+file_handler = logging.FileHandler(log_file, mode="w")
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 #---------------------------------------
 
@@ -82,23 +98,22 @@ logger.addHandler(console_handler)
 # ----------------------------
 def connect_ib():
     ib = IB()
-    print(f"Conectando a IB en {IB_HOST}:{IB_PORT} (clientId={IB_CLIENTID})...", flush=True)
     logger.info(f"Conectando a IB en {IB_HOST}:{IB_PORT} (clientId={IB_CLIENTID})...")
 
     try:
         ib.connect(IB_HOST, IB_PORT, clientId=IB_CLIENTID, timeout=10)
         logger.info("** Conectado a IB")
     except Exception as e:
-        print(f"❌ No se pudo conectar: {e}")
         logger.exception("❌ Error al conectar a IB")
         raise
     if not ib.isConnected():
         raise RuntimeError("❌ No se pudo establecer conexión con TWS/Gateway")
-    print("✅ Conectado a IB")
+
     return ib
 
-def ensure_symbol_dir(symbol):
-    d = os.path.join(OUTPUT_ROOT, symbol)
+def ensure_symbol_dir(raiz, directorio, symbol):
+    nombre= f"{raiz}/{directorio}"
+    d = os.path.join(nombre, symbol)
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -118,6 +133,22 @@ def list_downloaded_dates(symbol_dir):
             except Exception:
                 continue
     return dates
+
+def build_contract(ticker: str, tipo: str):
+    """Crea contrato IB según tipo indicado en Excel."""
+    tipo = tipo.lower()
+    if tipo == "stock":
+        return Stock(ticker, "SMART", "USD")
+    elif tipo == "future":
+        return Future(ticker, "202512", "GLOBEX")  # ajustar expiración/mercado
+    elif tipo == "forex":
+        return Forex(ticker)
+    elif tipo == "index":
+        return Index(ticker, "SMART")
+    else:
+        raise ValueError(f"Tipo de activo no soportado: {tipo}")
+
+
 
 def is_market_open(now=None):
     """True si ahora (NY) está entre 9:30 y 16:00 (sesión regular)."""
@@ -352,12 +383,13 @@ def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
 # ----------------------------
 # DESCARGA DE BARRAS 1 SEGUNDO
 # ----------------------------
-def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
+def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny, barra):
     """
     Descarga todos los datos de 1 segundo de la sesión [session_start_ny, session_end_ny],
     troceando en bloques de 30 minutos (IB solo permite 1s con duraciones <= 1h).
     Devuelve DataFrame con columnas: time, open, high, low, close, volume.
     """
+
     start_utc = session_start_ny.astimezone(pytz.utc)
     end_utc = session_end_ny.astimezone(pytz.utc)
 
@@ -365,17 +397,45 @@ def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
     block_start = start_utc
     iteration = 0
 
+    # 1s
+    if barra == "Bars1s":
+        tiempo = 30 #30 minutos
+        duracion= "1800 S"
+        tamaño= "1 secs"
+    # 15m
+    if barra == "Bars15m":
+        tiempo = 30  # 30 minutos
+        duracion= "1 W"
+        tamaño= "15 mins"
+    # 1h
+    if barra == "Bars1h":
+        tiempo = 30  # 30 minutos
+        duracion= "1 M"
+        tamaño= "1 hour"
+    # Diario
+    if barra == "BarsD":
+        tiempo = 30  # 30 minutos
+        duracion= "1800 S"
+        tamaño= "1 secs"
+    # Tick a Tick
+    if barra == "Tick2Tick":
+        tiempo = 30  # 30 minutos
+        duracion= "1800 S"
+        tamaño= "5 Y"
+
+
+
     while block_start < end_utc:
         iteration += 1
-        block_end = min(block_start + timedelta(minutes=30), end_utc)
+        block_end = min(block_start + timedelta(tiempo), end_utc)
         logger.debug(f"Iteración {iteration}: {block_start} → {block_end}")
 
         try:
             bars = ib.reqHistoricalData(
                 contract,
                 endDateTime=block_end,
-                durationStr="1800 S",       # 30 minutos = 1800 segundos
-                barSizeSetting="1 secs",    # barras de 1 segundo
+                durationStr=duracion,       # 30 minutos = 1800 segundos
+                barSizeSetting=tamaño,    # barras de 1 segundo
                 whatToShow=WHAT_TO_SHOW,
                 useRTH=True,
                 formatDate=1,
@@ -461,18 +521,69 @@ def save_session_df(symbol_dir, date_obj, df):
 # ----------------------------
 # LÓGICA PRINCIPAL
 # ----------------------------
+
+# === LOGGING CON FICHERO DIARIO ===
+today_str = datetime.now().strftime("%Y%m%d")
+log_file = os.path.join(LOG_DIR, f"downloader_{today_str}.log")
+logger = logging.getLogger("IBDownloader")
+logger.setLevel(logging.INFO)
+
+
+
+
 def main():
     ib = connect_ib()
 
     today_ny = datetime.now(pytz.utc).astimezone(NY_TZ).date()
     market_open_now = is_market_open()
 
-    for symbol in TICKERS:
-        print(f"\n== Procesando {symbol} ==")
-        logger.info(f"== Procesando {symbol} ==")
-        symbol_dir = ensure_symbol_dir(symbol)
-        downloaded = list_downloaded_dates(symbol_dir)
-        # definir rango a descargar
+    barras=""
+
+    config = pd.read_excel(EXCEL_CONFIG)
+    for _, row in config.iterrows():
+        ticker, tipo = row["Ticker"], row["Tipo"]
+        contract = build_contract(ticker, tipo)
+        logger.info(f"Procesando {ticker} ({tipo})")
+
+        # 1s
+        if row.get("Bars1s", 0) == 1:
+            ruta= ensure_symbol_dir (BASE_DIR, "Bars1s", ticker)
+            os.makedirs(ruta, exist_ok=True)
+            downloaded = list_downloaded_dates(ruta)
+            barras= "Bars1s"
+            logger.info(f"Descargando barras de 1 sg de {ticker} ")
+
+        # 15m
+        if row.get("Bars15m", 0) == 1:
+            ruta = ensure_symbol_dir(BASE_DIR, "Bars15m", ticker)
+            os.makedirs(ruta, exist_ok=True)
+            downloaded = list_downloaded_dates(ruta)
+            barras = "Bars15m"
+            logger.info(f"Descargando barras de 15 minutos de {ticker} ")
+
+        # 1h
+        if row.get("Bars1h", 0) == 1:
+            ruta = ensure_symbol_dir(BASE_DIR, "Bars1h", ticker)
+            os.makedirs(ruta, exist_ok=True)
+            downloaded = list_downloaded_dates(ruta)
+            barras = "Bars1h"
+            logger.info(f"Descargando barras de 1 hora de {ticker} ")
+
+        # Diario
+        if row.get("BarsD", 0) == 1:
+            ruta = ensure_symbol_dir(BASE_DIR, "BarsD", ticker)
+            os.makedirs(ruta, exist_ok=True)
+            downloaded = list_downloaded_dates(ruta)
+            barras = "BarsD"
+            logger.info(f"Descargando barras diarias de {ticker} ")
+
+        #Tick a Tick
+        if row.get("Tick2Tick", 0) == 1:
+            barras = "Tick2Tick"
+            logger.info(f"Tick a Tick  {ticker} ")
+
+
+
 
         if not downloaded:
             # primer arranque: intentamos INIT_DAYS_BACK días atrás (ajustando fines de semana)
@@ -488,6 +599,7 @@ def main():
                 start_date -= timedelta(days=1)
             # after loop start_date is 1 day earlier than needed
             start_date = next_business_day(start_date)
+
         else:
             last = max(downloaded)
             start_date = next_business_day(last)
@@ -497,47 +609,49 @@ def main():
                 end_date = today_ny
 
         if start_date > end_date:
-            print("  ✅ No hay días nuevos que descargar")
+            logger.info("  ✅ No hay días nuevos que descargar")
             continue
 
-        print(f"  Descargando rango: {start_date} → {end_date} (market_open_now={market_open_now})")
         logger.debug(f"Descargando rango: {start_date} → {end_date} (market_open_now={market_open_now})")
 
-        # preparar contrato
-        contract = Stock(symbol, "SMART", "USD")
         # No funciona contract = Future(symbol, '202509', 'GLOBEX')
         try:
             ib.qualifyContracts(contract)
         except Exception as e:
-            print(f"  ⚠️ qualifyContracts fallo para {symbol}: {e}")
+            logger.info(f"  ⚠️ qualifyContracts fallo para {symbol}: {e}")
 
         d = start_date
+
+
         while d <= end_date:
             if d.weekday() >= 5:
                 d = next_business_day(d)
                 continue
             if d in downloaded:
-                print(f"    {d} ya descargado → saltando")
+                logger.info (f"    {d} ya descargado se salta")
                 d = next_business_day(d)
                 continue
 
-            print(f"    → Descargando sesión {d}")
+            logger.info (f"Descargando sesión {d}")
             session_start = NY_TZ.localize(datetime.combine(d, SESSION_OPEN))
             session_end = NY_TZ.localize(datetime.combine(d, SESSION_CLOSE))
             try:
-                df_day = fetch_ticks_for_session(ib, contract, session_start, session_end)
+
+                df_day = fetch_ticks_for_session(ib, contract, session_start, session_end,barras )
                 if not df_day.empty:
-                    save_session_df(symbol_dir, d, df_day)
+                    save_session_df(ruta, d, df_day)
                     time.sleep(30.0) #Evitar el pacing
                 else:
-                    print(f"    ⚠️ No hubo ticks para {symbol} {d}")
+                    logger.info (f"    ⚠️ No hubo ticks para {ticker} {d}")
             except Exception as e:
-                print(f"    ❌ Error Descargar {symbol} {d}: {e}")
+                logger.info (f"    ❌ Error Descargar {ticker} {d}: {e}")
 
             d = next_business_day(d)
 
     ib.disconnect()
-    print("\n✂ Desconectado. Proceso finalizado.")
+    logger.info ("\n  Desconectado. Proceso finalizado.")
+
+
 
 if __name__ == "__main__":
     main()
