@@ -37,7 +37,7 @@ from logging.handlers import TimedRotatingFileHandler
 # CONFIGURACIÓN (TOP LEVEL)
 # ----------------------------
 TICKERS = ["SPY","PYPL","MO","KO","SBUX","AAPL","INTC","T"]    # Lista de símbolos
-OUTPUT_ROOT = "./data1s"                # Carpeta raíz donde se crearán subdirectorios
+OUTPUT_ROOT = "E:/DATOSBOLSA/data1s"                # Carpeta raíz donde se crearán subdirectorios
 #WHAT_TO_SHOW = "Bid_Ask"              # Usamos Bid_Ask para reqHistoricalTicks
 WHAT_TO_SHOW = "Trades"              # Usamos Bid_Ask para reqHistoricalTicks
 INIT_DAYS_BACK = 5                  # si no existe historial, intentamos éste nº de días atrás (ajustable)
@@ -412,7 +412,7 @@ def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
             })
 
         block_start = block_end
-        time.sleep(0.5)
+        time.sleep(1)
 
     if rows:
         df = pd.DataFrame(rows)
@@ -528,7 +528,7 @@ def main():
                 df_day = fetch_ticks_for_session(ib, contract, session_start, session_end)
                 if not df_day.empty:
                     save_session_df(symbol_dir, d, df_day)
-                    time.sleep(30.0) #Evitar el pacing
+                    time.sleep(60.0) #Evitar el pacing
                 else:
                     print(f"    ⚠️ No hubo ticks para {symbol} {d}")
             except Exception as e:
