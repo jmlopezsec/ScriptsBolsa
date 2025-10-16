@@ -22,3 +22,12 @@ guardando un fichero XLSX por día en un subdirectorio por ticker.
 Ajusta TICKERS, OUTPUT_ROOT, INIT_DAYS_BACK según necesites.
 Esta probrado la descraga inicial, para un sólo activo.
 Se generan muchísimos datos por lo que voy a hacer un script que descargue en barras de un sg.
+
+La descarga por segudos se realiza con el script Descarga1sg.py que almacena los datos en la unidad E y gestiona la descarga desde
+Una lista en el código. 
+
+También hay un script y un libro jupyter test.py y AnalisisMACD respectivamente que descragan datos de Yahoo y calcula a 
+partir del corte en MACD los estadisticos en periodos de 30 días. Esto se debe utilizar para determinar los rangos de stops al 
+usar un activo con opciones al corte con MACD.
+
+ 
