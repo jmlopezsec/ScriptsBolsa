@@ -10,9 +10,9 @@ import matplotlib.pyplot as plt
 
 #inicialización
 # Obtener los datos históricos de precios de una acción utilizando yfinance
-ACCION= 'MO'
-FechaIni= '2024-01-01'
-FechaFin= '2025-10-10'
+ACCION= 'AAPL'
+FechaIni= '2014-01-01'
+FechaFin= '2025-08-25'
 data = yf.download(ACCION, start=FechaIni, end=FechaFin, auto_adjust=False)
 
 # Calculo macd with standard colors first

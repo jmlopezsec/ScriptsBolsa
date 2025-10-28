@@ -412,7 +412,7 @@ def fetch_ticks_for_session(ib, contract, session_start_ny, session_end_ny):
             })
 
         block_start = block_end
-        time.sleep(1)
+        time.sleep(2)
 
     if rows:
         df = pd.DataFrame(rows)
