@@ -528,7 +528,7 @@ def main():
                 df_day = fetch_ticks_for_session(ib, contract, session_start, session_end)
                 if not df_day.empty:
                     save_session_df(symbol_dir, d, df_day)
-                    time.sleep(60.0) #Evitar el pacing
+                    time.sleep(80.0) #Evitar el pacing
                 else:
                     print(f"    ⚠️ No hubo ticks para {symbol} {d}")
             except Exception as e:

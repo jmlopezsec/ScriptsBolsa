@@ -39,7 +39,7 @@ from logging.handlers import TimedRotatingFileHandler
 # CONFIGURACIÓN (TOP LEVEL)
 # ----------------------------
 TICKERS = ["AAPL"]    # Lista de símbolos
-OUTPUT_ROOT = "./data"                # Carpeta raíz donde se crearán subdirectorios
+OUTPUT_ROOT = "E:/DATOSBOLSA/datatick"                # Carpeta raíz donde se crearán subdirectorios
 #WHAT_TO_SHOW = "Bid_Ask"              # Usamos Bid_Ask para reqHistoricalTicks
 WHAT_TO_SHOW = "Trades"              # Usamos Bid_Ask para reqHistoricalTicks
 INIT_DAYS_BACK = 3                  # si no existe historial, intentamos éste nº de días atrás (ajustable)
