@@ -1,59 +1,3 @@
-'''
-import asyncio
-from datetime import datetime
-import pytz
-
-
-
-
-#----------------- Utils -----------------------
-
-LOCAL_TZ = pytz.timezone("Europe/Madrid")
-
-def tz_local(dt):
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=pytz.UTC)
-    return dt.astimezone(LOCAL_TZ)
-
-
-
-
-#-------------------------------------------------------------------------------------
-#                           Tareas
-
-#tarea 1
-async def tarea1 (nombre):
-    print("Inicio tarea 1. ", datetime.now(LOCAL_TZ))
-    print(f"Hola {nombre}")
-    await asyncio.sleep(2)
-    print(f"Adiós {nombre}")
-    print("Fin tarea 1. ", datetime.now(LOCAL_TZ))
-
-
-
-
-
-#------------------------------------------------------------------------------------
-
-
-
-
-
-async def main():
-    #await asyncio.gather(*(descargar(i) for i in range(5)))
-
-    print("Inicio main . ", datetime.now(LOCAL_TZ))
-
-    asyncio.create_task(tarea1("pepe"))
-
-    print ("Hola")
-
-
-asyncio.run(main())
-
-'''
 
 import streamlit as st
 import pandas as pd
@@ -86,7 +30,7 @@ OPCIONES_ESTADO = ["Abierta", "Cerrada", "Asignada", "Expirada"]
 
 
 # --- Funciones de carga y guardado ---
-@st.cache_data
+#@st.cache_data
 def cargar_excel():
     return pd.read_excel(RUTA, engine="openpyxl")
 
@@ -95,7 +39,9 @@ def guardar_excel(df):
 
 # --- Cargar datos ---
 if RUTA.exists():
+    print("Leyendo del EXCEL")
     mtabla = cargar_excel()
+
 
     #mtabla= df[["datetime","symbol"]]
     df= mtabla[["datetime","symbol","underlying_price","side","shares","right","expiry","price","commission","gross_value","Estado","Bloque"]]
@@ -113,7 +59,7 @@ if RUTA.exists():
         "gross_value": "Total"
     })
 
-
+    print("Creada tabla VISUAL")
 
 else:
     st.error("El fichero datos.xlsx no existe en la misma carpeta que app.py")
@@ -202,7 +148,7 @@ tabla_editada = st.data_editor(
     column_config=column_config     #Añadida para bloquear
 )
 
-
+print ("VISUALIZAMOS TABLA")
 # -------------------------------------
 #    BOTONES: GUARDAR Y RECARGAR
 # -------------------------------------
@@ -217,11 +163,14 @@ with col1:
 
             df.update(tabla_editada)
 
-            mtabla[["Estado", "Bloque"]] = tabla_editada[["Estado", "Bloque"]]
+
+            mtabla[["Estado", "Bloque"]] = df[["Estado", "Bloque"]]
 
             guardar_excel(mtabla)
             st.success("Cambios guardados en datos.xlsx")
-            st.cache_data.clear()
+            #st.cache_data.clear()
+            print("Guardamos Excel")
+
         except Exception as e:
             st.error(f"No se pudo guardar: {e}")
 
