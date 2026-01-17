@@ -189,6 +189,9 @@ def update_excel(df_all):
 
 def main():
     ib = connect_ib()
+
+
+
     #existing_exec_ids = load_existing_exec_ids()
 
     #df_all = fetch_executions(ib)

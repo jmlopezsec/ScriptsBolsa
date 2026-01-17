@@ -65,6 +65,8 @@ def crear_fila (exec, contract):
         "gamma": None,
         "theta": None,
         "vega": None,
+        "Estado": None,
+        "Bloque": None,
     }
 
 
@@ -167,7 +169,8 @@ CLIENT_ID = 0  # Se suscribe al cliente 0 que es el que permite interceptar los 
 MARKET_DATA_TYPE  =  1
 
 
-EXCEL_FILE = "ib_operaciones5.xlsx"
+#EXCEL_FILE = "ib2025.xlsx"
+EXCEL_FILE = "ibcopia.xlsx"
 SHEET_NAME = "RAW_IB"
 
 
@@ -383,7 +386,7 @@ async def main():
 
     ticker.updateEvent += on_tick_griegas             #callback para recibir datops en TR de las griegas
 
-    await asyncio.sleep(8)
+    await asyncio.sleep(12)
 
     await (Evento_griegas.wait())
 
@@ -391,12 +394,15 @@ async def main():
 
     #print (msggriegas)
 
-    msg["data"]["delta"]= msggriegas["data"].delta
-    msg["data"]["gamma"] = msggriegas["data"].gamma
-    msg["data"]["theta"] = msggriegas["data"].theta
-    msg["data"]["vega"] = msggriegas["data"].vega
-    msg["data"]["underlying_iv"] = msggriegas["data"].impliedVol
-    msg["data"]["underlying_price"]= valor_subyacente
+    if msggriegas !=  None:
+        msg["data"]["delta"]= msggriegas["data"].delta
+        msg["data"]["gamma"] = msggriegas["data"].gamma
+        msg["data"]["theta"] = msggriegas["data"].theta
+        msg["data"]["vega"] = msggriegas["data"].vega
+        msg["data"]["underlying_iv"] = msggriegas["data"].impliedVol
+        msg["data"]["underlying_price"]= valor_subyacente
+    else:
+        print(msggriegas)
 
 
     print ("Ya tenemos datos escribimos en el excel")

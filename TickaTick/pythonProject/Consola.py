@@ -2,14 +2,14 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-
+from pandas.tseries.offsets import BDay  # === NUEVO: para sumar días hábiles
 
 
 st.set_page_config(page_title="Tabla editable", layout="wide")
 #st.title("CONSOLA")
 
 # Ruta del Excel
-RUTA = Path("ibcopia.xlsx")
+RUTA = Path("ib2025.xlsx")
 
 # Columnas editables y opciones
 COLUMNAS_EDITABLES = ["Estado", "Bloque"]
@@ -21,7 +21,7 @@ def cargar_excel(path: Path) -> pd.DataFrame:
     return pd.read_excel(path, engine="openpyxl")
 
 def guardar_excel(path: Path, df: pd.DataFrame) -> None:
-    df.to_excel(path, index=False, engine="openpyxl")
+    df.to_excel(path, index=False, engine="openpyxl", sheet_name="RAW_IB")
 
 def fmt_moneda(v):
     return (f"{v:,.2f}" + "€").replace(",", "X").replace(".", ",").replace("X", ".")
@@ -71,6 +71,19 @@ df = df.rename(columns={
     "gross_value": "Total"
 })
 
+
+# === NUEVO: eliminar hora de la columna Fecha ===
+df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.date
+df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%d/%m/%Y")
+
+# === Formatear Expiracion (viene como YYYYMMDD) a DD/MM/YYYY (texto) ===
+df["Expiracion"] = (
+    pd.to_datetime(df["Expiracion"].astype(str), format="%Y%m%d", errors="coerce")
+      .dt.strftime("%d/%m/%Y")
+)
+
+
+
 # =========================
 #      FILTROS (SIDEBAR)
 # =========================
@@ -113,6 +126,9 @@ def _norm_estado(series):
 if {"Estado", "Total"}.issubset(df_filtrado.columns):
     mask_abiertas_filtrado = _norm_estado(df_filtrado["Estado"]) == ESTADO_OBJETIVO.casefold()
     total_abiertas_filtrado = _to_numeric_safe(df_filtrado.loc[mask_abiertas_filtrado, "Total"]).sum()
+    total_comisiones_filtrado = _to_numeric_safe(df_filtrado.loc[mask_abiertas_filtrado, "Comision"]).sum()
+    total_abiertas_filtrado= total_abiertas_filtrado - total_comisiones_filtrado
+
 else:
     total_abiertas_filtrado = 0.0
 
@@ -175,6 +191,33 @@ with kpi2:
     )
 
 
+# === NUEVO: Cálculos para la pestaña “Objetivos”
+# Base: del valor seleccionado (df_intermedio) y posiciones abiertas
+if {"Estado", "Total"}.issubset(df_intermedio.columns):
+    mask_abiertas_valor = _norm_estado(df_intermedio["Estado"]) == ESTADO_OBJETIVO.casefold()
+    base_kpi_valor_abiertas = _to_numeric_safe(df_intermedio.loc[mask_abiertas_valor, "Total"]).sum()
+else:
+    base_kpi_valor_abiertas = 0.0
+
+objetivo_70 = 0.70 * base_kpi_valor_abiertas
+objetivo_35 = 0.35 * base_kpi_valor_abiertas
+
+# Fecha de primera posición abierta (por valor) y +3 días hábiles
+first_open_date = None
+target_date = None
+if "Fecha" in df_intermedio.columns and "Estado" in df_intermedio.columns:
+    abiertas_valor_df = df_intermedio.loc[mask_abiertas_valor].copy()
+    if not abiertas_valor_df.empty:
+        # Asegurar tipo datetime
+        if not pd.api.types.is_datetime64_any_dtype(abiertas_valor_df["Fecha"]):
+            abiertas_valor_df["Fecha"] = pd.to_datetime(abiertas_valor_df["Fecha"], errors="coerce")
+        first_open_date = abiertas_valor_df["Fecha"].min()
+        if pd.notna(first_open_date):
+            target_date = first_open_date + BDay(3)  # 3 días de trading posteriores
+
+
+
+
 
 # ---------- Configuración de columnas ----------
 column_config = {}
@@ -229,3 +272,31 @@ with col2:
     if st.button("🔄 Recargar desde Excel", use_container_width=True):
         # st.cache_data.clear()
         st.experimental_rerun()
+
+
+
+
+# =========================
+#      NUEVA PESTAÑA: Objetivos
+# =========================
+st.markdown("---")
+st.markdown("### 🎯 Objetivos (valor seleccionado)")
+
+tab_obj, = st.tabs(["Objetivos"])
+with tab_obj:
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        kpi_color("Objetivo 70% (Abiertas por valor)", objetivo_70, objetivo_70 >= 0)
+    with c2:
+        kpi_color("Objetivo 35% (Abiertas por valor)", objetivo_35, objetivo_35 >= 0)
+    with c3:
+        kpi_color("KPI base (Abiertas por valor)", base_kpi_valor_abiertas, base_kpi_valor_abiertas >= 0)
+
+    st.markdown("#### 📅 Fecha objetivo")
+    if first_open_date is None or pd.isna(first_open_date):
+        st.info("No hay posiciones abiertas en el valor seleccionado o la fecha no es válida.")
+    else:
+        st.write(f"Primera posición abierta: **{first_open_date.strftime('%d/%m/%Y')}**")
+        st.write(f"Fecha objetivo (+3 días hábiles): **{target_date.strftime('%d/%m/%Y')}**")
+        # Si quieres incluir el día de la semana:
+        # st.write(f"Fecha objetivo: **{target_date.strftime('%A %d/%m/%Y')}**")
