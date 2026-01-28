@@ -56,7 +56,7 @@ mtabla = cargar_excel(RUTA)
 
 # Selección y renombre para la vista
 df = mtabla.loc[:, [
-    "datetime", "symbol", "underlying_price", "side", "shares", "right",
+    "datetime", "symbol", "underlying_price", "side", "shares", "right", "strike",
     "expiry", "price", "commission", "gross_value", "Estado", "Bloque"
 ]].copy()
 
@@ -270,8 +270,8 @@ with col1:
 
 with col2:
     if st.button("🔄 Recargar desde Excel", use_container_width=True):
-        # st.cache_data.clear()
-        st.experimental_rerun()
+        st.cache_data.clear()
+        st.rerun()
 
 
 

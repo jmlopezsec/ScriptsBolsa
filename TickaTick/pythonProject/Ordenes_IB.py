@@ -17,7 +17,8 @@ TWS_PORT = 7496
 CLIENT_ID = 0
 MARKET_DATA_TYPE = 1
 
-EXCEL_FILE = "ibcopia.xlsx"
+EXCEL_FILE = "ib2025.xlsx"
+#EXCEL_FILE = "ibcopia.xlsx"
 SHEET_NAME = "RAW_IB"
 
 LOCAL_TZ = pytz.timezone("Europe/Madrid")
@@ -48,8 +49,8 @@ def crear_fila(exec, contract):
     dt = tz_local(exec.time)
     qty = abs(exec.shares or 0)
     price = exec.price or 0.0
-    tipo= getattr(contract, "right", "")
-    if tipo == "C":
+    tipo = exec.side
+    if tipo == "BOT":
         gross = price * qty * 100 * -1
     else:
         gross = price * qty * 100
@@ -171,6 +172,9 @@ async def on_informe_comisiones(trade, fill, cr):
 
 
 def on_error(reqId, errorCode, errorString, contract):
+    INFO_CODES = {2103,2104, 2106, 2107, 2108, 2158}
+    if errorCode in INFO_CODES:
+        return
     print("[IB ERROR]", errorCode, errorString)
 
 
@@ -247,7 +251,7 @@ async def worker_ordenes(ib: IB):
 # =========================================================
 
 async def main():
-    print("Inicio listener:", datetime.now(LOCAL_TZ))
+    print("Inicio ORDER listener:", datetime.now(LOCAL_TZ))
 
     ib = IB()
     await ib.connectAsync(TWS_HOST, TWS_PORT, clientId=CLIENT_ID)
