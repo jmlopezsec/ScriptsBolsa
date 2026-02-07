@@ -88,7 +88,11 @@ def sanitize_for_excel(df, to_tz=None):
 
 def write_rows_to_excel(rows):
     try:
+
+
         df_new = pd.DataFrame(rows)
+        df_new = df_new[df_new["open_interest"].notna()]
+        df_new = df_new[df_new["open_interest"] > 0]
 
         if os.path.exists(EXCEL_FILE):
             df_old = pd.read_excel(EXCEL_FILE, sheet_name=SHEET_NAME, engine="openpyxl")
@@ -96,7 +100,8 @@ def write_rows_to_excel(rows):
         else:
             df_all = df_new
 
-        df_all = df_all.drop_duplicates(subset=["date", "conId"], keep="last")
+        df_all = df_all.sort_values("inserted_at")
+        df_all = df_all.drop_duplicates(subset=["date", "conId"], keep="first")
         df_all = df_all.sort_values(by=["date", "symbol", "expiry", "strike", "right"])
 
         df_all = sanitize_for_excel(df_all,to_tz=LOCAL_TZ)
@@ -350,7 +355,8 @@ async def fetch_option_oi(ib: IB, opt: Option, queue: asyncio.Queue):
             openint= ticker.putOpenInterest
 
         row = {
-            "date": date.today().isoformat(),
+            #"date": date.today().isoformat(),
+            "date": (datetime.now(LOCAL_TZ) - timedelta(hours=6)).date().isoformat(),
             "symbol": opt.symbol,
             "expiry": opt.lastTradeDateOrContractMonth,
             "right": opt.right,
@@ -419,7 +425,9 @@ async def main():
             await collect_chain(ib, symbol, expiry, spot, queue)
 
     # Flush final
-    await asyncio.sleep(2)
+    await asyncio.sleep(3)
+    write_rows_to_excel([])  # fuerza escritura del buffer pendiente
+
     while not queue.empty():
         await asyncio.sleep(1)
 
