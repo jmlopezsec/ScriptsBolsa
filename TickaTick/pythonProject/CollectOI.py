@@ -1,5 +1,28 @@
+'''
+Definición fichero excel del universo de opciones (Las que se van a recolectasr)
+
+symbol: ticker.
+expiry: AAAAMMDD.
+right: C, P o BOTH.
+mode:
+    ATM_WINDOW → usa ventana alrededor del ATM (usa atm_window = nº de strikes por lado).
+    EXPLICIT → usa lista exacta de strikes (strikes, separador ;).
+atm_window: entero (si mode=ATM_WINDOW).
+strikes: lista separada por ; (si mode=EXPLICIT).
+
+EJEMPLO:
+
+symbol,expiry,right,mode,atm_window,strikes
+AAPL,20260320,BOTH,ATM_WINDOW,8,
+INTC,20260320,P,EXPLICIT,,45;47.5;50
+SPY,20260320,C,ATM_WINDOW,10,
+
+
+'''
+
+
 import os, asyncio, traceback
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import pytz
 import pandas as pd
 import re
@@ -35,6 +58,28 @@ SYMBOLS = {
 STRIKE_RANGE = 0.2  # ±20% del precio spot
 
 
+
+EXCEL_UNIVERSE = "oi_universe.xlsx"
+UNIVERSE_SHEET = "UNIVERSE"
+
+# Estrategia de duplicados al escribir:
+#   - "last_by_inserted" (por defecto): conserva la fila con mayor inserted_at
+#   - "first_by_inserted": conserva la primera
+#   - "max_oi": conserva la fila (date,symbol,expiry,right,strike,conId) con OI máximo
+#   - "sum_oi_day": agrega OI por día (suma) en duplicados exactos
+DEDUP_STRATEGY = "last_by_inserted"
+
+# Estrategia para OI vacíos/NaN:
+#   - "drop" (por defecto): descartar
+#   - "zero": poner a 0
+#   - "ffill": rellenar hacia delante en (date,symbol,expiry,right,strike)
+MISSING_OI_STRATEGY = "drop"
+
+
+
+
+
+
 # =========================================================
 #                    UTILIDADES
 # =========================================================
@@ -46,6 +91,60 @@ _BAD = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
 #    for c in df.select_dtypes(include=["object"]).columns:
 #        df[c] = df[c].apply(lambda x: _BAD.sub("", x) if isinstance(x, str) else x)
 #    return df
+
+def load_universe_from_file(path=EXCEL_UNIVERSE, sheet=UNIVERSE_SHEET):
+    """
+    Lee un Excel con cabeceras al menos: symbol, expiry (cadena AAAAMMDD).
+    Devuelve un diccionario del estilo:
+        { "AAPL": ["20260306","20260320"], "SPY": ["20260320"], ... }
+    Si no existe el fichero/hoja o no hay datos válidos, devuelve None.
+    """
+    try:
+        if not os.path.exists(path):
+            print(f"[UNIVERSE] No existe {path}. Se usará SYMBOLS por defecto.")
+            return None
+
+        dfu = pd.read_excel(path, sheet_name=sheet, engine="openpyxl")
+        if dfu is None or dfu.empty:
+            print(f"[UNIVERSE] Hoja {sheet} vacía en {path}. Se usará SYMBOLS por defecto.")
+            return None
+
+        # Normaliza cabeceras
+        dfu.columns = [str(c).strip().lower() for c in dfu.columns]
+        required = {"symbol", "expiry"}
+        if not required.issubset(set(dfu.columns)):
+            print(f"[UNIVERSE] Faltan columnas {required} en {sheet}. Se usará SYMBOLS por defecto.")
+            return None
+
+        # Limpieza y tipos
+        dfu["symbol"] = dfu["symbol"].astype(str).str.upper().str.strip()
+        dfu["expiry"] = dfu["expiry"].astype(str).str.strip()
+
+        # Elimina filas inválidas
+        dfu = dfu[(dfu["symbol"] != "") & (dfu["expiry"] != "")]
+        if dfu.empty:
+            print(f"[UNIVERSE] Sin filas válidas en {sheet}. Se usará SYMBOLS por defecto.")
+            return None
+
+        # Deduplicamos y ordenamos expiries
+        uni = {}
+        for sym, grp in dfu.groupby("symbol"):
+            expiries = sorted(set(grp["expiry"].tolist()))
+            if len(expiries) > 0:
+                uni[sym] = expiries
+
+        if not uni:
+            print(f"[UNIVERSE] No se pudo formar el diccionario desde {path}. Se usará SYMBOLS por defecto.")
+            return None
+
+        print(f"[UNIVERSE] Cargado desde Excel: {len(uni)} símbolos.")
+        return uni
+
+    except Exception as e:
+        print(f"[UNIVERSE] Error leyendo {path}: {e}. Se usará SYMBOLS por defecto.")
+        return None
+
+
 
 
 
@@ -89,8 +188,16 @@ def sanitize_for_excel(df, to_tz=None):
 def write_rows_to_excel(rows):
     try:
 
+        if not rows:
+            print("[EXCEL] Buffer vacío, no hay nada nuevo que escribir.")
+            return
 
         df_new = pd.DataFrame(rows)
+
+        if "open_interest" not in df_new.columns:
+            print("[EXCEL] No existe la columna 'open_interest' en df_new. Filas recibidas:", df_new.columns.tolist())
+            return
+
         df_new = df_new[df_new["open_interest"].notna()]
         df_new = df_new[df_new["open_interest"] > 0]
 
@@ -100,11 +207,13 @@ def write_rows_to_excel(rows):
         else:
             df_all = df_new
 
+        df_all = sanitize_for_excel(df_all, to_tz=LOCAL_TZ)
+
         df_all = df_all.sort_values("inserted_at")
         df_all = df_all.drop_duplicates(subset=["date", "conId"], keep="first")
         df_all = df_all.sort_values(by=["date", "symbol", "expiry", "strike", "right"])
 
-        df_all = sanitize_for_excel(df_all,to_tz=LOCAL_TZ)
+
 
         with pd.ExcelWriter(EXCEL_FILE, engine="openpyxl", mode="w") as w:
             df_all.to_excel(w, sheet_name=SHEET_NAME, index=False)
@@ -123,6 +232,7 @@ def write_rows_to_excel(rows):
 def on_error(reqId, errorCode, errorString, contract):
     INFO_CODES = {200, 2103,2104, 2106, 2107, 2108, 2158}
     if errorCode in INFO_CODES:
+        print ("Eliminado", errorCode, errorString)
         return
     print("[IB ERROR]", errorCode, errorString)
 
@@ -365,7 +475,7 @@ async def fetch_option_oi(ib: IB, opt: Option, queue: asyncio.Queue):
             "local_symbol": opt.localSymbol,
             "open_interest": openint,
             "last": ticker.last,
-            "inserted_at": datetime.now(LOCAL_TZ)
+            "inserted_at": (datetime.now(LOCAL_TZ) - timedelta(hours=6)).date().isoformat()
         }
 
         #print (f"Encolamos: {row}")
@@ -391,6 +501,14 @@ async def worker_excel(queue: asyncio.Queue):
     while True:
         row = await queue.get()
         #print("Sacando datos COLA")
+
+        if row is None:   # señal de flush
+            if buffer:
+                write_rows_to_excel(buffer)
+                buffer.clear()
+            continue
+
+
         buffer.append(row)
 
         #print (len(buffer))
@@ -417,16 +535,25 @@ async def main():
     queue = asyncio.Queue()
     asyncio.create_task(worker_excel(queue))
 
-    for symbol, expiries in SYMBOLS.items():
+    # 1) Intentar cargar el universo desde Excel (mismo formato de tu dict)
+    loaded_symbols = load_universe_from_file()
+
+    # 2) Si no hay Excel válido: usar tu diccionario por defecto
+    symbols_dict = loaded_symbols if loaded_symbols else SYMBOLS
+
+
+    for symbol, expiries in symbols_dict.items():
         spot = await get_spot_price(ib, symbol)
         print(f"[SPOT] {symbol} = {spot}")
 
         for expiry in expiries:
             await collect_chain(ib, symbol, expiry, spot, queue)
 
-    # Flush final
-    await asyncio.sleep(3)
-    write_rows_to_excel([])  # fuerza escritura del buffer pendiente
+    # ---------------------------------------------------
+    # 🔥 FLUSH FINAL REAL DEL WORKER EXCEL
+    # ---------------------------------------------------
+    await queue.put(None)  # señal de flush para el worker
+    await asyncio.sleep(1)  # dejamos tiempo a que escriba el buffer
 
     while not queue.empty():
         await asyncio.sleep(1)

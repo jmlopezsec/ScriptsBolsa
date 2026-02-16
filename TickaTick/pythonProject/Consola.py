@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 from pandas.tseries.offsets import BDay  # === NUEVO: para sumar días hábiles
+from datetime import datetime
 
 
 st.set_page_config(page_title="Tabla editable", layout="wide")
@@ -110,6 +111,7 @@ with st.sidebar:
     )
 
 
+
 # =========================
 #      INDICADORES (KPIs)
 # =========================
@@ -124,9 +126,9 @@ def _norm_estado(series):
 
 # --- KPI 1: Abiertas (sobre df_filtrado: respeta ambos filtros)
 if {"Estado", "Total"}.issubset(df_filtrado.columns):
-    mask_abiertas_filtrado = _norm_estado(df_filtrado["Estado"]) == ESTADO_OBJETIVO.casefold()
-    total_abiertas_filtrado = _to_numeric_safe(df_filtrado.loc[mask_abiertas_filtrado, "Total"]).sum()
-    total_comisiones_filtrado = _to_numeric_safe(df_filtrado.loc[mask_abiertas_filtrado, "Comision"]).sum()
+    mask_abiertas_filtrado = _norm_estado(df_intermedio["Estado"]) == ESTADO_OBJETIVO.casefold()
+    total_abiertas_filtrado = _to_numeric_safe(df_intermedio.loc[mask_abiertas_filtrado, "Total"]).sum()
+    total_comisiones_filtrado = _to_numeric_safe(df_intermedio.loc[mask_abiertas_filtrado, "Comision"]).sum()
     total_abiertas_filtrado= total_abiertas_filtrado - total_comisiones_filtrado
 
 else:
@@ -137,6 +139,10 @@ else:
 if {"Estado", "Total"}.issubset(df_intermedio.columns):
     mask_no_abiertas_valor = _norm_estado(df_intermedio["Estado"]) != ESTADO_OBJETIVO.casefold()
     total_no_abiertas_solo_valor = _to_numeric_safe(df_intermedio.loc[mask_no_abiertas_valor, "Total"]).sum()
+    #Añado comisiones
+    total_comisiones_filtrado = _to_numeric_safe(df_intermedio.loc[mask_no_abiertas_valor, "Comision"]).sum()
+    total_no_abiertas_solo_valor= total_no_abiertas_solo_valor - total_comisiones_filtrado
+
 else:
     total_no_abiertas_solo_valor = 0.0
 
@@ -144,6 +150,9 @@ else:
 if {"Estado", "gross_value"}.issubset(mtabla.columns):
     mask_no_abiertas_global = _norm_estado(mtabla["Estado"]) != ESTADO_OBJETIVO.casefold()
     total_no_abiertas_global = _to_numeric_safe(mtabla.loc[mask_no_abiertas_global, "gross_value"]).sum()
+    #total_comisiones_filtrado = _to_numeric_safe(df_filtrado.loc[mask_no_abiertas_global, "Comision"]).sum()
+    total_comisiones_filtrado = _to_numeric_safe(df.loc[mask_no_abiertas_global, "Comision"]).sum()
+    total_no_abiertas_global= total_no_abiertas_global - total_comisiones_filtrado
 else:
     total_no_abiertas_global = 0.0
 
@@ -210,12 +219,25 @@ if "Fecha" in df_intermedio.columns and "Estado" in df_intermedio.columns:
     if not abiertas_valor_df.empty:
         # Asegurar tipo datetime
         if not pd.api.types.is_datetime64_any_dtype(abiertas_valor_df["Fecha"]):
-            abiertas_valor_df["Fecha"] = pd.to_datetime(abiertas_valor_df["Fecha"], errors="coerce")
+            abiertas_valor_df["Fecha"] = pd.to_datetime(abiertas_valor_df["Fecha"], errors="coerce") ##
+
+
+            ##
+
+        solo = pd.to_datetime(abiertas_valor_df["Fecha"], errors="coerce").dt.strftime("%d/%m/%Y").min()
         first_open_date = abiertas_valor_df["Fecha"].min()
+
+        print("Fecha inicio: ",first_open_date)
+        print(type(first_open_date))
+        solo = first_open_date.strftime("%m/%d/%Y")
+        print (solo)
+        #first_open_date = datetime.strptime(first_open_date, "%Y-%m-%d").date()
         if pd.notna(first_open_date):
             target_date = first_open_date + BDay(3)  # 3 días de trading posteriores
-
-
+            new_date = first_open_date + pd.offsets.BDay(3)
+            print ("nuevo", new_date)
+            print("A 3 dias: ", target_date)
+            print(f"Fecha objetivo (+3 días hábiles): **{target_date.strftime('%d/%m/%Y')}**")
 
 
 
@@ -296,7 +318,8 @@ with tab_obj:
     if first_open_date is None or pd.isna(first_open_date):
         st.info("No hay posiciones abiertas en el valor seleccionado o la fecha no es válida.")
     else:
-        st.write(f"Primera posición abierta: **{first_open_date.strftime('%d/%m/%Y')}**")
+        st.write(f"Primera posición abierta: **{solo}**")
+        #st.write(f"Primera posición abierta: **{first_open_date.strftime('%Y/%m/%d')}**")
         st.write(f"Fecha objetivo (+3 días hábiles): **{target_date.strftime('%d/%m/%Y')}**")
         # Si quieres incluir el día de la semana:
         # st.write(f"Fecha objetivo: **{target_date.strftime('%A %d/%m/%Y')}**")
